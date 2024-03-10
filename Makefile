@@ -1,3 +1,22 @@
+# SNU ----------------------------------------------------
+# Do not change the following PANUM
+PANUM = pa1
+# Please specify your student ID:
+STUDENTID =
+
+_PANUM = $(strip $(PANUM))
+ifneq ($(_PANUM), pa1)
+$(error Please set PANUM to pa1)
+endif
+ifndef STUDENTID
+$(error Please set STUDENTID in Makefile)
+endif
+ifneq ($(shell git rev-parse --abbrev-ref HEAD), $(_PANUM))
+$(error You are not on $(_PANUM) branch; do "$$ git checkout $(_PANUM)")
+endif
+_STUDENTID = $(strip $(STUDENTID))
+#---------------------------------------------------------
+
 K=kernel
 U=user
 
@@ -56,7 +75,7 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
-CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -DSNU
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
@@ -171,3 +190,13 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
+# SNU ----------------------------------------------------
+TARBALL = ../xv6-$(_PANUM)-$(_STUDENTID).tar.gz
+FILES = ./Makefile ./$K ./$U ./mkfs
+
+submit:
+	make clean
+	@rm -f $(TARBALL)
+	@tar cvzf $(TARBALL) $(FILES)
+	@echo "Please submit $(TARBALL) file"
+#---------------------------------------------------------
