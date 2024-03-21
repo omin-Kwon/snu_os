@@ -1,11 +1,11 @@
 # SNU ----------------------------------------------------
 # Do not change the following PANUM
-PANUM = pa1
+PANUM = pa2
 # Please specify your student ID:
 STUDENTID =
 
 _PANUM = $(strip $(PANUM))
-ifneq ($(_PANUM), pa1)
+ifneq ($(_PANUM), pa2)
 $(error Please set PANUM to pa1)
 endif
 ifndef STUDENTID
