@@ -2,7 +2,7 @@
 # Do not change the following PANUM
 PANUM = pa1
 # Please specify your student ID:
-STUDENTID =
+STUDENTID = 2019-18764
 
 _PANUM = $(strip $(PANUM))
 ifneq ($(_PANUM), pa1)

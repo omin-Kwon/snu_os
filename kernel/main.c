@@ -16,6 +16,26 @@ main()
     printf("\n");
     printf("xv6 kernel is booting\n");
     printf("\n");
+
+    printf("SNUOS2024");
+    printf("\n");
+    printf("2019-18764");
+    printf("\n");
+    printf("\n");
+    printf("  ★★★★★★  ★★    ★★★★★★    ★★★★★★  ★★ \n");
+    printf("      ★★  ★★   ★★★★★★★★   ★★  ★★  ★★ \n");
+    printf("      ★★  ★★   ★★    ★★   ★★  ★★  ★★ \n");
+    printf("      ★★  ★★   ★★    ★★   ★★  ★★  ★★ \n");
+    printf("      ★★  ★★   ★★    ★★   ★★  ★★  ★★ \n");
+    printf("★★★★★★★★★★★★   ★★★★★★★★   ★★  ★★  ★★ \n");
+    printf("   ★★     ★★    ★★★★★★    ★★★★★★  ★★\n");
+    printf("   ★★ ★★★★★★      ★★              ★★\n");
+    printf("   ★★     ★★      ★★       ★★     ★★\n");
+    printf("   ★★        ★★★★★★★★★★★★  ★★       \n");
+    printf("   ★★                      ★★       \n");
+    printf("   ★★★★★★★★★               ★★★★★★★★★\n");
+    printf("\n");
+
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
