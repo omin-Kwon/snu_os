@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "types.h": "c",
+        "user.h": "c",
+        "__availability": "c",
+        "__config": "c"
+    }
+}

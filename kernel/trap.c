@@ -9,6 +9,10 @@
 struct spinlock tickslock;
 uint ticks;
 
+// for kbdints
+extern uint64 num_kbd_interrupts;
+
+
 extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
@@ -49,7 +53,6 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
   if(r_scause() == 8){
     // system call
 
@@ -135,10 +138,10 @@ void
 kerneltrap()
 {
   int which_dev = 0;
+  // printf("kerneltrap\n");
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
-  
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
   if(intr_get() != 0)
@@ -178,7 +181,7 @@ int
 devintr()
 {
   uint64 scause = r_scause();
-
+  // printf("scause: %p\n", scause);
   if((scause & 0x8000000000000000L) &&
      (scause & 0xff) == 9){
     // this is a supervisor external interrupt, via PLIC.

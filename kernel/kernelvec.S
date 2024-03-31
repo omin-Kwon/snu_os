@@ -90,6 +90,7 @@ kernelvec:
         #
         # machine-mode timer interrupt.
         #
+
 .globl timervec
 .align 4
 timervec:
@@ -98,10 +99,39 @@ timervec:
         # scratch[24] : address of CLINT's MTIMECMP register.
         # scratch[32] : desired interval between interrupts.
         
+        # save the register first
         csrrw a0, mscratch, a0
         sd a1, 0(a0)
         sd a2, 8(a0)
         sd a3, 16(a0)
+
+
+        # For SNU pa2, read value from mcause.
+        csrr a1, mcause  
+        li a2, 9
+        bne a1, a2, timerintrvec
+
+        # mcause is 9, then it's time() syscall
+        # update mepc to mepc + 4
+        csrr a1, mepc
+        addi a1, a1, 4
+        csrw mepc, a1
+
+        # restore with register's original value
+        ld a3, 16(a0)
+        ld a2, 8(a0)
+        ld a1, 0(a0)
+        csrrw a0, mscratch, a0
+
+        # reading the mtime register
+        rdtime a0
+        mret
+
+timerintrvec:
+        # start.c has set up the memory that mscratch points to:
+        # scratch[0,8,16] : register save area.
+        # scratch[24] : address of CLINT's MTIMECMP register.
+        # scratch[32] : desired interval between interrupts.
 
         # schedule the next timer interrupt
         # by adding interval to mtimecmp.

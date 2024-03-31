@@ -7,6 +7,7 @@
 void main();
 void timerinit();
 
+
 // entry.S needs one stack per CPU.
 __attribute__ ((aligned (16))) char stack0[4096 * NCPU];
 
@@ -33,9 +34,9 @@ start()
   // disable paging for now.
   w_satp(0);
 
-  // delegate all interrupts and exceptions to supervisor mode.
-  w_medeleg(0xffff);
-  w_mideleg(0xffff);
+  // delegate all interrupts and exceptions to supervisor mode except user environment calls.
+  w_medeleg(0xfdff); // don't delegate Synchronous Environment Call to supervisor mode.
+  w_mideleg(0xfff);
   w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
 
   // configure Physical Memory Protection to give supervisor mode
@@ -76,6 +77,7 @@ timerinit()
   uint64 *scratch = &timer_scratch[id][0];
   scratch[3] = CLINT_MTIMECMP(id);
   scratch[4] = interval;
+
   w_mscratch((uint64)scratch);
 
   // set the machine-mode trap handler.

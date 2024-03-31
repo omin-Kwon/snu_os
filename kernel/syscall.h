@@ -20,7 +20,7 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
-#ifdef SNU
+// #ifdef SNU
 #define SYS_kbdints 22
 #define SYS_time    23
-#endif
+// #endif

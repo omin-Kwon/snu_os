@@ -6,6 +6,9 @@
 #include "spinlock.h"
 #include "proc.h"
 
+
+extern uint64 num_kbd_interrupts;
+
 uint64
 sys_exit(void)
 {
@@ -89,3 +92,22 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// SNU pa2 syscall
+uint64
+sys_kbdints(void)
+{
+  return num_kbd_interrupts;
+}
+
+// SNU pa2 syscall
+uint64
+sys_time(void)
+{
+  asm volatile("ecall");
+  //read from a0 value
+  uint64 time;
+  asm volatile("mv %0, a0" : "=r" (time));
+  return time;
+}
+

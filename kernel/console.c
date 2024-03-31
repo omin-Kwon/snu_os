@@ -30,6 +30,12 @@
 // called by printf(), and to echo input characters,
 // but not from write().
 //
+
+// for kbdints, intialize num_kbd_interrupts as 0
+uint64 num_kbd_interrupts = 0;
+
+
+
 void
 consputc(int c)
 {
@@ -136,7 +142,7 @@ void
 consoleintr(int c)
 {
   acquire(&cons.lock);
-
+  num_kbd_interrupts++;
   switch(c){
   case C('P'):  // Print process list.
     procdump();
