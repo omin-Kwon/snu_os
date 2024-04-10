@@ -1,12 +1,12 @@
 # SNU ----------------------------------------------------
 # Do not change the following PANUM
-PANUM = pa2
+PANUM = pa3
 # Please specify your student ID:
 STUDENTID =
 
 _PANUM = $(strip $(PANUM))
-ifneq ($(_PANUM), pa2)
-$(error Please set PANUM to pa1)
+ifneq ($(_PANUM), pa3)
+$(error Please set PANUM to pa3)
 endif
 ifndef STUDENTID
 $(error Please set STUDENTID in Makefile)
