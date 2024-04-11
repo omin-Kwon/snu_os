@@ -36,3 +36,7 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+# SNU
+entry("time");
+entry("sched_setattr");
+entry("sched_yield");

@@ -22,6 +22,11 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+#ifdef SNU
+int time(void);
+int sched_setattr(int, int, int);
+int sched_yield(void);
+#endif
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -89,3 +89,39 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+#ifdef SNU
+/* Do not touch sys_time() */
+uint64 
+sys_time(void)
+{
+  uint64 x;
+
+  asm volatile("rdtime %0" : "=r" (x));
+  return x;
+}
+/* Do not touch sys_time() */
+
+uint64
+sys_sched_setattr(void)
+{
+  // FILL HERE
+
+
+
+
+
+
+  return 0;
+}
+
+uint64
+sys_sched_yield(void)
+{
+  // MODIFY THIS
+  
+  yield();
+
+  return 0;
+}
+#endif

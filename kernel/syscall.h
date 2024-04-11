@@ -20,3 +20,9 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#ifdef SNU
+#define SYS_time   23
+#define SYS_sched_setattr 30
+#define SYS_sched_yield   31
+#endif
+
