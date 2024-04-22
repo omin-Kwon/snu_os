@@ -2,7 +2,7 @@
 # Do not change the following PANUM
 PANUM = pa3
 # Please specify your student ID:
-STUDENTID =
+STUDENTID = 2019-18764
 
 _PANUM = $(strip $(PANUM))
 ifneq ($(_PANUM), pa3)
@@ -199,7 +199,7 @@ qemu-log: $K/kernel fs.img
 	@echo "*** The output of xv6 is logged in the 'xv6.log' file." 1>&2
 
 png: xv6.log
-	./graph.py xv6.log graph.png
+	python3 graph.py xv6.log graph.png
 
 TARBALL = ../xv6-$(_PANUM)-$(_STUDENTID).tar.gz
 FILES = ./Makefile ./$K ./$U ./mkfs

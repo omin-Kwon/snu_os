@@ -124,6 +124,11 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  // Initialize runtime and period as 0 for normal scheduling in pa3.
+  p->runtime = 0;
+  p->period = 0;
+  p->deadline = 0;
+  p->next_deadline = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -448,25 +453,115 @@ scheduler(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
+  int prior_pid = -1;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
+    // Real-time process have higher priority than normal processes.
+    while(1){
+      int min_deadline = 0x7fffffff;
+      int real_time_pid = -1;
+      int is_prior_process_has_min_deadline = 0;
+      int normal_process_idx = 0;
+      // First check if there is any real-time process that is ready to run.
+      // If there are multiple real-time processes that have the same deadline, choose the process with this rule
+      // 1. Select the current process if it is among them.
+      // 2. If not, assign the CPU to the process with the smallest pid.
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        // if the process is normal process, skip the process.
+        if(p->period == 0){
+          release(&p->lock);
+          continue;
+        }
+        // if the process is sleeping and the deadline is less than ticks, set the process to runnable and update the deadline.
+        if(p->state == SLEEPING && p->deadline <= ticks){
+          p->state = RUNNABLE;
+          p->deadline = p->next_deadline;
+          if(p->deadline < min_deadline){
+            min_deadline = p->deadline;
+            real_time_pid = p->pid;
+          }
+          else if(p->deadline == min_deadline){
+            if(is_prior_process_has_min_deadline){
+              ;
+            }
+            else{
+              if(p->pid == prior_pid){
+                is_prior_process_has_min_deadline = 1;
+                real_time_pid = p->pid;
+              }
+              else if(p->pid < real_time_pid){
+                real_time_pid = p->pid;
+              }
+            }
+          }
+        }
+        // else if the process is runnable, check if the deadline is less than the min_deadline.
+        else if(p->state == RUNNABLE && p->deadline < min_deadline){
+          min_deadline = p->deadline;
+          real_time_pid = p->pid;
+        }
+        // else if the process is runnable, but the deadline is same as the min_deadline, check the pid.
+        else if(p->state == RUNNABLE && p->deadline == min_deadline){
+          if(is_prior_process_has_min_deadline){
+            ;
+          }
+          else{
+            if(p->pid == prior_pid){
+              is_prior_process_has_min_deadline = 1;
+              real_time_pid = p->pid;
+            }
+            else if(p->pid < real_time_pid){
+              real_time_pid = p->pid;
+            }
+          }
+        }
+        release(&p->lock);
       }
-      release(&p->lock);
+      // if there is no real-time process that is ready to run, go to the normal process.
+      // start from normal_process_idx, and find the first normal process that is runnable.
+      // Round Robin Scheduler for normal processe
+      if(real_time_pid == -1){
+        int idx = normal_process_idx;
+        while(idx != normal_process_idx + NPROC){
+          p = &proc[idx % NPROC];
+          acquire(&p->lock);
+          if(p->state == RUNNABLE){
+            p->state = RUNNING;
+            c->proc = p;
+            swtch(&c->context, &p->context);
+            prior_pid = c->proc->pid; // store the current process id
+            c->proc = 0;
+            normal_process_idx = (idx + 1) % NPROC;
+            release(&p->lock);
+            break;
+          }
+          release(&p->lock);
+          idx++;
+        }
+        continue;
+      }
+      // if there is a real-time process that is ready to run, run the real-time process.
+      else{
+        //run the real_time_pid process
+        for(p = proc; p < &proc[NPROC]; p++) {
+          acquire(&p->lock);
+          if(p->pid == real_time_pid){
+            p->state = RUNNING;
+            c->proc = p;
+            swtch(&c->context, &p->context);
+            prior_pid = c->proc->pid; // store the current process id
+            c->proc = 0;
+            release(&p->lock);
+            break;
+          }
+          release(&p->lock);
+        }
+        continue;
+      }
     }
   }
 }
@@ -680,4 +775,39 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+//pa3
+int sched_setattr(int pid, int runtime, int period){
+    struct proc *p;
+    for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        if(p->pid == pid){
+            p->runtime = runtime;
+            p->period = period;
+            // set the deadline for the process. deadline = current time + period
+            p->deadline = ticks + period;
+            p->next_deadline = p->deadline;
+            release(&p->lock);
+            return 0;
+        }
+        release(&p->lock);
+    }
+    return -1;
+}
+
+
+void sched_yield(){
+  // system call implementation for real-time processes, so that the current real-time process gives up the CPU and waits until the start of its next period.
+  struct proc *p = myproc();
+  // update the new deadline
+  acquire(&p->lock);
+  p->next_deadline = p->deadline + p->period; //update the next_deadline as the current deadline + period
+  // if the deadline and next_deadline is different, it means that the process should wait until the ticks reaches deadline.
+  // when the ticks reaches deadline, deadline is updated to next_deadline and the process is set to runnable.
+  p->state = SLEEPING;
+  //printf("pid: %d, deadline: %d, next_deadline: %d\n", p->pid, p->deadline, p->next_deadline);
+  sched(); // call the scheduler
+  release(&p->lock);
 }

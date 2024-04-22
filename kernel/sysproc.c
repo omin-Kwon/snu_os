@@ -6,6 +6,8 @@
 #include "spinlock.h"
 #include "proc.h"
 
+#define SNU 1
+
 uint64
 sys_exit(void)
 {
@@ -106,22 +108,36 @@ uint64
 sys_sched_setattr(void)
 {
   // FILL HERE
-
-
-
-
-
-
-  return 0;
+  uint64 pid, runtime, period;
+  //sys_sched_setattr(int pid, int runtime, int period);
+  //read the arguments from trapframe
+  argaddr(0, &pid);
+  argaddr(1, &runtime);
+  argaddr(2, &period);
+  //print the arguments
+  //printf("pid: %d, runtime: %d, period: %d\n", pid, runtime, period);
+  //set the attributes to the process
+  int err = sched_setattr(pid, runtime, period);
+  return err;
 }
 
 uint64
 sys_sched_yield(void)
 {
   // MODIFY THIS
-  
-  yield();
-
+  //call the sched_yield function
+  //check whether the current process is normal process or real-time process
+  //if the current process is real-time process, then call the sched_yield function
+  //if the current process is normal process, then call the yield function
+  //return 0 if the function is successfully executed
+  //return -1 if the function is failed
+  struct proc *p = myproc();
+  if(p->period == 0){
+    yield();
+  }
+  else{
+    sched_yield();
+  }
   return 0;
 }
 #endif

@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "__availability": "c",
+        "__config": "c",
+        "defs.h": "c",
+        "param.h": "c"
+    }
+}
