@@ -89,3 +89,14 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+#ifdef SNU
+uint64
+sys_time(void)
+{
+  uint64 x;
+
+  asm volatile("rdtime %0" : "=r" (x));
+  return x;
+}
+#endif
