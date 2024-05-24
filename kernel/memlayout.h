@@ -55,6 +55,7 @@
 // each surrounded by invalid guard pages.
 #define KSTACK(p) (TRAMPOLINE - ((p)+1)* 2*PGSIZE)
 
+#define ZEROPAGE (KSTACK(64)-PGSIZE)
 // User memory layout.
 // Address zero first:
 //   text

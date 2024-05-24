@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "ksm.h"
 
 /*
  * the kernel's page table.
@@ -14,6 +15,13 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+uint64* zero_page;
+
+//stable tree root
+extern struct node* stable_tree;
+//unstable tree root
+extern struct node* unstable_tree;
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -42,6 +50,15 @@ kvmmake(void)
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  // make a initial zero page and then map it. ZEROPG is a constant defined in memlayout.h
+  //allocate a page for the zero page
+  zero_page = kalloc();
+  //memset the zero page to 0
+  memset((char*)zero_page, 0, PGSIZE);
+  //map the zero page to the ZEROPAGE
+  kvmmap(kpgtbl, ZEROPAGE, (uint64)zero_page, PGSIZE, PTE_R | PTE_W);
+
 
   // allocate and map a kernel stack for each process.
   proc_mapstacks(kpgtbl);
@@ -95,7 +112,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
-      memset(pagetable, 0, PGSIZE);
+      memset(pagetable, 0, PGSIZE); //zero page
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
@@ -183,6 +200,15 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+
+    //check if the pte is in the ksm stable tree
+    //if it is, remove it from the stable tree
+    uint64 pa = PTE2PA(*pte);
+    uint64 h = xxh64((void*)pa, PGSIZE);
+    struct node* node = find_stable(stable_tree, h);
+
+
+
     if(do_free){
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);

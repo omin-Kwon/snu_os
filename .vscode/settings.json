@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "defs.h": "c",
+        "types.h": "c",
+        "riscv.h": "c",
+        "ksm.h": "c",
+        "param.h": "c",
+        "cstring": "c",
+        "fstream": "c",
+        "locale": "c",
+        "proc.h": "c"
+    }
+}
