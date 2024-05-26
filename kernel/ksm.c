@@ -59,7 +59,7 @@ void insert_unstable(struct node* root, ksm_entry* entry){
             root->left_child->left_child = 0;
             root->left_child->right_child = 0;
             root->left_child->parent = root;
-            printf("left child has been inserted\n");
+            //printf("left child has been inserted\n");
             return;
         }else{
             insert_unstable(root->left_child, entry);
@@ -105,7 +105,7 @@ void delete_unstable(struct node* root, uint64 hash_value, int is_left){
         return;
     }
     if(root->entry->hash_value == hash_value){
-        printf("Found the node to delete\n");
+        //printf("Found the node to delete\n");
         if(root->left_child == 0 && root->right_child == 0){
             if(is_left == 1){
                 root->parent->left_child = 0;
@@ -116,13 +116,11 @@ void delete_unstable(struct node* root, uint64 hash_value, int is_left){
             else{
                 unstable_tree = 0;
             }
-            // kfree((void*)root->entry);
-            // kfree((void*)root);
             return;
         }
         if(root->left_child == 0){
             struct node* temp = root->right_child;
-            printf("is_left: %d\n", is_left);
+            //printf("is_left: %d\n", is_left);
             if(is_left == 1){
                 root->parent->left_child = temp;
             }
@@ -132,8 +130,6 @@ void delete_unstable(struct node* root, uint64 hash_value, int is_left){
             else{
                 unstable_tree = temp;
             }
-            // kfree((void*)root->entry);
-            // kfree((void*)root);
             root = 0;
             return;
         }
@@ -148,8 +144,6 @@ void delete_unstable(struct node* root, uint64 hash_value, int is_left){
             else{
                 unstable_tree = temp;
             }
-            // kfree((void*)root->entry);
-            // kfree((void*)root);
             root = 0;
             return;
         }
@@ -179,7 +173,7 @@ void free_all_unstable(struct node* root){
     kfree((void*)root->entry);
     kfree((void*)root);
     root = 0;
-    printf("node has been deleted, root: %d\n", root);
+    //printf("node has been deleted, root: %d\n", root);
     return;
 }
 
@@ -240,6 +234,84 @@ struct node* find_stable(struct node* root, uint64 hash_value){
 }
 
 //Delete the node in the stable tree.
+void delete_stable(struct node* root, uint64 hash_value, int is_left, uint64 pid ){
+    if(root == 0){
+        return;
+    }
+    if(root->entry->hash_value == hash_value){
+        //printf("Found the node to delete\n");
+        for(int i = 0; i < root->entry->counts; i++){
+            if(root->entry->reverse_mapping_list[i].pid == pid){
+                root->entry->reverse_mapping_list[i] = root->entry->reverse_mapping_list[root->entry->counts - 1];
+                root->entry->counts--;
+                break;
+            }
+        }
+        if(root->entry->counts > 0){
+            return;
+        }
+        if(root->left_child == 0 && root->right_child == 0){
+            if(is_left == 1){
+                root->parent->left_child = 0;
+            }
+            else if(is_left == 0){
+                root->parent->right_child = 0;
+            }
+            else{
+                stable_tree = 0;
+            }
+            kfree((void*)root->entry);
+            kfree((void*)root);
+            return;
+        }
+        if(root->left_child == 0){
+            struct node* temp = root->right_child;
+            //printf("is_left: %d\n", is_left);
+            if(is_left == 1){
+                root->parent->left_child = temp;
+            }
+            else if(is_left == 0){
+                root->parent->right_child = temp;
+            }
+            else{
+                stable_tree = temp;
+            }
+            kfree((void*)root->entry);
+            kfree((void*)root);
+            root = 0;
+            return;
+        }
+        if(root->right_child == 0){
+            struct node* temp = root->left_child;
+            if(is_left == 1){
+                root->parent->left_child = temp;
+            }
+            else if(is_left == 0){
+                root->parent->right_child = temp;
+            }
+            else{
+                stable_tree = temp;
+            }
+            kfree((void*)root->entry);
+            kfree((void*)root);
+            root = 0;
+            return;
+        }
+        struct node* temp = root->right_child;
+        while(temp->left_child != 0){
+            temp = temp->left_child;
+        }
+        root->entry = temp->entry;
+        delete_stable(root->right_child, temp->entry->hash_value, 0, pid);
+    }
+    if(hash_value < root->entry->hash_value){
+        delete_stable(root->left_child, hash_value, 1, pid);
+    }
+    else{
+        delete_stable(root->right_child, hash_value, 0, pid);
+    }
+}
+
 
 
 
@@ -250,7 +322,7 @@ void print_tree(struct node* root){
         return;
     }
     print_tree(root->left_child);
-    printf("hash value: %d\n", root->entry->hash_value);
+    printf("hash value: %d, counts: %d\n", root->entry->hash_value, root->entry->counts);
     print_tree(root->right_child);
 }
 
@@ -269,22 +341,29 @@ sys_ksm(void)
     // scanning all pages from the process's virtual memory
     int scanned = 0;
     int merged = 0;
-    uint64 zero_page_hash = xxh64((void*)zero_page, PGSIZE);
-    printf("zero_page_hash: %d\n", zero_page_hash);
+    //uint64 zero_page_hash = xxh64((void*)zero_page, PGSIZE);
+    //printf("zero_page_hash: %d\n", zero_page_hash);
     // process list
     struct proc *p;
-    for(p = mycpu()->proc; p < &(mycpu()->proc[NPROC]); p++){
+    for(int i = 0; i < NPROC; i++){
+        p = &mycpu()->proc[i];
+        //pid type is long int. print it
+        //printf("pid: %d\n", p->pid);
         //pid check, continue when pid is 1 or 2 or process itself invoking the ksm system call 
-        if(p->state == UNUSED){
+        if(p->state == UNUSED || p->state == ZOMBIE || p->state > 5){
+            //printf("pid: %d, state: %d\n", p->pid, p->state);
             continue;
         }
-        if(p->pid == 1 || p->pid == 2 || p == myproc())
+        if(p->pid == 1 || p->pid == 2 || p == myproc()){
+            //printf("p is myproc : %d\n", p == myproc());
             continue;
+        }
+        //printf("pid: %d, state: %d\n", p->pid, p->state);
         // scanning all pages from the process's virtual memory
         // page table
         pagetable_t pagetable = p->pagetable;
         uint64 max_sz = p->sz;
-        printf("=============SCANNING PROCESS %d=============\n", p->pid);
+        //printf("=============SCANNING PROCESS %d=============\n", p->pid);
         for(uint64 va = 0; va < max_sz; va += PGSIZE){
             pte_t *pte = walk(pagetable, va, 0); //dosen
             if(pte == 0) //no leaf page table entry for this virtual address
@@ -303,23 +382,25 @@ sys_ksm(void)
             scanned++;
             // hash the page
             uint64 h = xxh64((void *)pa, PGSIZE);
-            printf("hash value: %d\n", h);
+            //printf("hash value: %d\n", h);
             // Zero page check
             if(h == zero_page_hash){
-              if(pa == (uint64)zero_page){
-                printf("already zero page\n");
+              if(pa == (uint64)zero_page){ //if physical address is already zero page
+                //printf("already zero page\n");
                 continue;
               }
-              //map the zero page to the physical frame of the zero page
-              int perm = *pte & 0x3FF;
-              *pte = PA2PTE(zero_page) | perm;
-              //write protection to the pte
-              *pte &= ~PTE_W;
-              //free the pa
-              kfree((void*)pa);
-              printf("zero merged\n");
-              merged++;
-              continue;
+              else{
+                 //map the zero page to the physical frame of the zero page
+                int perm = *pte & 0x3FF;
+                *pte = PA2PTE(zero_page) | perm;
+                //write protection to the pte
+                *pte &= ~PTE_W;
+                //free the pa
+                kfree((void*)pa);
+                //printf("zero merged\n");
+                merged++;
+                continue;
+              }
             }
             //First, find it in the stable tree
             struct node* node = find_stable(stable_tree, h);
@@ -344,13 +425,13 @@ sys_ksm(void)
               node->entry->reverse_mapping_list[node->entry->counts].va = va;
               node->entry->counts++;
               merged++;
-              //write protection to the pte
-              *pte &= ~PTE_W;
               //change the mapping of the page to the new physical frame which we find in the stable tree
               //free the pa
               kfree((void*)pa);
               //change pte
-              *pte = PA2PTE(node->entry->pa) | PTE_V | PTE_U; // Write protection is already removed
+              int perm = *pte & 0x3FF;
+              *pte = PA2PTE(node->entry->pa) | perm;
+              *pte &= ~PTE_W; // Write protection is removed
             }
             else{//second, find it in the unstable tree
               struct node* node = find_unstable(unstable_tree, h);
@@ -376,25 +457,29 @@ sys_ksm(void)
                 node->entry->counts++;
                 // delete the node from the unstable tree
                 delete_unstable(unstable_tree, h, -1);
+                //kfree the node page
                 // insert the node to the stable tree
                 insert_stable(stable_tree, node->entry);
                 merged++;
                 //free the pa
                 kfree((void*)pa);
                 //change the pte
-                *pte = PA2PTE(node->entry->pa) | PTE_V | PTE_U; // Write protection is removed
+                int perm = *pte & 0x3FF;
+                *pte = PA2PTE(node->entry->pa) | perm;
+                *pte &= ~PTE_W; // Write protection is removed
+                kfree((void*)node);
               }
             }
         }
     }
     //delete the unstable tree
-    printf("====unstable tree====\n");
-    print_tree(unstable_tree);
-    printf("====stable tree====\n");
-    print_tree(stable_tree);
+    //printf("====unstable tree====\n");
+    //print_tree(unstable_tree);
+    //printf("====stable tree====\n");
+    //print_tree(stable_tree);
     free_all_unstable(unstable_tree);
     unstable_tree = 0;
-    printf("unstable tree has been deleted, unstable tree: %d\n", unstable_tree);
+    //printf("unstable tree has been deleted, unstable tree: %d\n", unstable_tree);
 
     if (copyout(myproc()->pagetable, arg1, (char *)&scanned, sizeof(scanned)) < 0)
         return -1;

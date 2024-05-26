@@ -5,6 +5,16 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "ksm.h"
+
+
+// pa4
+
+extern struct node* stable_tree;
+extern struct node* unstable_tree;
+
+
+
 
 struct spinlock tickslock;
 uint ticks;
@@ -36,6 +46,7 @@ trapinithart(void)
 void
 usertrap(void)
 {
+  //printf("usertrap\n");
   int which_dev = 0;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
@@ -49,6 +60,7 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
+
   
   if(r_scause() == 8){
     // system call
@@ -63,13 +75,53 @@ usertrap(void)
     // an interrupt will change sepc, scause, and sstatus,
     // so enable only now that we're done with those registers.
     intr_on();
-
     syscall();
+    //printf("returned from syscall\n");
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+  }else if(r_scause()== 15){
+    //printf("store page fault\n");
+    //copy on write
+    uint64 stval = r_stval();
+    uint64 addr = PGROUNDDOWN(stval);
+    pte_t* pte = walk(p->pagetable, addr, 0);
+    //get the pa and hash value
+    uint64 pa = PTE2PA(*pte);
+    uint64 hash = xxh64((void*)pa, PGSIZE);
+    int perm = PTE_FLAGS(*pte);
+    printf("pa: %p , hash: %p\n", pa, hash);
+    //check if the page is zero page or if the page is in the stable tree
+    if(hash == zero_page_hash){
+      //allocate the new page and change pte to this page.
+      uint64* new_pa = kalloc();
+      if(new_pa == 0){
+        printf("kalloc failed\n");
+        return;
+      }
+      memset((void*)new_pa, 0, PGSIZE);
+      *pte = PA2PTE(new_pa) | perm | PTE_W | PTE_V;
+      //printf("Copy the zero page to new page\n");
+    }
+    else if(find_stable(stable_tree, hash) != 0){
+      //delete in the stable tree
+      delete_stable(stable_tree, hash, 0, p->pid);
+      //allocate the new page and change pte to this page.
+      uint64* new_pa = kalloc();
+      if(new_pa == 0){
+        printf("kalloc failed\n");
+        return;
+      }
+      memmove((void*)new_pa, (void*)pa, PGSIZE);
+      *pte = PA2PTE(new_pa) | perm | PTE_W | PTE_V;
+      //printf("Copy the stable page to new page\n");
+    }
+    else{
+      printf("Error. User doesn't have write permission.\n");
+    }
+  } 
+  else {
+    // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     setkilled(p);
   }
 
@@ -79,7 +131,6 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
-
   usertrapret();
 }
 
@@ -99,7 +150,6 @@ usertrapret(void)
   // send syscalls, interrupts, and exceptions to uservec in trampoline.S
   uint64 trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
   w_stvec(trampoline_uservec);
-
   // set up trapframe values that uservec will need when
   // the process next traps into the kernel.
   p->trapframe->kernel_satp = r_satp();         // kernel page table

@@ -110,7 +110,6 @@ fileread(struct file *f, uint64 addr, int n)
 
   if(f->readable == 0)
     return -1;
-
   if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
@@ -125,7 +124,6 @@ fileread(struct file *f, uint64 addr, int n)
   } else {
     panic("fileread");
   }
-
   return r;
 }
 
@@ -138,7 +136,6 @@ filewrite(struct file *f, uint64 addr, int n)
 
   if(f->writable == 0)
     return -1;
-
   if(f->type == FD_PIPE){
     ret = pipewrite(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){

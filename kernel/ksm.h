@@ -42,6 +42,7 @@ struct node {
 //kernel page table
 extern pagetable_t kernel_pagetable;
 extern uint64* zero_page;
+extern uint64  zero_page_hash;
 extern uint64 xxh64(void *input, unsigned int len);
 
 
@@ -54,7 +55,7 @@ struct node* find_unstable(struct node* root, uint64 hash_value);
 
 //Delete the node in the unstable tree.
 void delete_unstable(struct node* root, uint64 hash_value, int is_left);
-
+void delete_stable(struct node* root, uint64 hash_value, int is_left, uint64 pid);
 
 
 void free_all_unstable(struct node* root);

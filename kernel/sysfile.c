@@ -16,6 +16,13 @@
 #include "file.h"
 #include "fcntl.h"
 
+
+#include "ksm.h"
+
+extern struct node* stable_tree;
+
+
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -81,16 +88,35 @@ sys_read(void)
 
 uint64
 sys_write(void)
-{
+{ 
   struct file *f;
   int n;
   uint64 p;
   
   argaddr(1, &p);
   argint(2, &n);
+  //ge the physical address of the p virtual address
+  //walk the page table to get the pte  
+  //pte_t* pte = walk(myproc()->pagetable, p, 0);
+  //check the page's valid bit and writable bit
+  //printf("pte: %p\n", *pte);
+  //printf("writable: %d\n", *pte & PTE_W);
+  //get the pa
+  //uint64 pa = PTE2PA(*pte);
+  //printf("pa: %p\n", pa);
+  //get the hash value from xxh64
+  //uint64 hash = xxh64((void*)pa, n);
+  //printf("hash: %d\n", hash);
+  //find it from the stable_tree
+  //struct node* node = find_stable(stable_tree, hash);
+  // printf("stable_tree\n");
+  // print_tree(stable_tree);
+  //printf("node: %p\n", node);
+
+
+
   if(argfd(0, 0, &f) < 0)
     return -1;
-
   return filewrite(f, p, n);
 }
 

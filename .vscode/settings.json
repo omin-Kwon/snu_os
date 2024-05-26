@@ -8,6 +8,7 @@
         "cstring": "c",
         "fstream": "c",
         "locale": "c",
-        "proc.h": "c"
+        "proc.h": "c",
+        "ostream": "c"
     }
 }

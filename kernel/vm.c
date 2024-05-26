@@ -17,6 +17,7 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 extern char trampoline[]; // trampoline.S
 
 uint64* zero_page;
+uint64  zero_page_hash;
 
 //stable tree root
 extern struct node* stable_tree;
@@ -56,9 +57,10 @@ kvmmake(void)
   zero_page = kalloc();
   //memset the zero page to 0
   memset((char*)zero_page, 0, PGSIZE);
+  //printf("zero_page: %p\n", zero_page);
   //map the zero page to the ZEROPAGE
-  kvmmap(kpgtbl, ZEROPAGE, (uint64)zero_page, PGSIZE, PTE_R | PTE_W);
-
+  kvmmap(kpgtbl, ZEROPAGE, (uint64)zero_page, PGSIZE, PTE_R | PTE_U);
+  zero_page_hash = xxh64((void*)zero_page, PGSIZE);
 
   // allocate and map a kernel stack for each process.
   proc_mapstacks(kpgtbl);
@@ -200,15 +202,6 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-
-    //check if the pte is in the ksm stable tree
-    //if it is, remove it from the stable tree
-    uint64 pa = PTE2PA(*pte);
-    uint64 h = xxh64((void*)pa, PGSIZE);
-    struct node* node = find_stable(stable_tree, h);
-
-
-
     if(do_free){
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
@@ -216,6 +209,59 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     *pte = 0;
   }
 }
+
+void
+uvmunmap_pid(pagetable_t pagetable, uint64 va, uint64 npages, int do_free, uint64 pid)
+{
+  printf("pid: %d\n", pid);
+  uint64 a;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("uvmunmap: not aligned");
+
+  for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("uvmunmap: walk");
+    if((*pte & PTE_V) == 0)
+      panic("uvmunmap: not mapped");
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+
+    //printf("uvmunmap_pid: va: %p, npages: %d, do_free: %d, pid: %d\n", a, npages, do_free, pid);
+    //check if the pte is in the ksm stable tree
+    //if it is, remove it from the stable tree
+    uint64 pa = PTE2PA(*pte);
+    uint64 h = xxh64((void*)pa, PGSIZE);
+    struct node* node = find_stable(stable_tree, h);
+    //printf("find_stable: %p\n", node);
+    //check if the pte is the zero page
+    if(pa == (uint64)zero_page){
+      //printf("uvmunmap_pid: zero page\n");
+      *pte = 0;
+      continue;
+    }
+    else if(node != 0){
+      uint64 counts = node->entry->counts;
+      delete_stable(stable_tree, h, -1, pid);
+      //change the pte to invalid
+      *pte = 0;
+      if(counts == 1 && do_free){
+        kfree((void*)pa);
+        *pte = 0;
+      }
+      continue;
+      //}
+    }
+    else{
+      if(do_free){
+        kfree((void*)pa);
+        *pte = 0;
+      }
+    }
+  }
+}
+
 
 // create an empty user page table.
 // returns 0 if out of memory.
@@ -315,10 +361,11 @@ freewalk(pagetable_t pagetable)
 // Free user memory pages,
 // then free page-table pages.
 void
-uvmfree(pagetable_t pagetable, uint64 sz)
+uvmfree(pagetable_t pagetable, uint64 sz, uint64 pid)
 {
   if(sz > 0)
-    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+    //uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+    uvmunmap_pid(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1, pid);
   freewalk(pagetable);
 }
 
