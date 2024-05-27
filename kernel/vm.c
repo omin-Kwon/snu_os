@@ -19,6 +19,10 @@ extern char trampoline[]; // trampoline.S
 uint64* zero_page;
 uint64  zero_page_hash;
 
+
+ksm_page_list* ksm_page_info;
+
+
 //stable tree root
 extern struct node* stable_tree;
 //unstable tree root
@@ -62,7 +66,10 @@ kvmmake(void)
   kvmmap(kpgtbl, ZEROPAGE, (uint64)zero_page, PGSIZE, PTE_R | PTE_U);
   zero_page_hash = xxh64((void*)zero_page, PGSIZE);
 
-  // allocate and map a kernel stack for each process.
+  ksm_page_info = (ksm_page_list*)kalloc();
+  //set to zero
+  memset(ksm_page_info, 0, PGSIZE);
+
   proc_mapstacks(kpgtbl);
   
   return kpgtbl;
@@ -213,7 +220,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 void
 uvmunmap_pid(pagetable_t pagetable, uint64 va, uint64 npages, int do_free, uint64 pid)
 {
-  printf("pid: %d\n", pid);
+  //printf("pid: %d\n", pid);
   uint64 a;
   pte_t *pte;
 
@@ -243,7 +250,7 @@ uvmunmap_pid(pagetable_t pagetable, uint64 va, uint64 npages, int do_free, uint6
     }
     else if(node != 0){
       uint64 counts = node->entry->counts;
-      delete_stable(stable_tree, h, -1, pid);
+      delete_stable(stable_tree, h, -1, pid, a, 0);
       //change the pte to invalid
       *pte = 0;
       if(counts == 1 && do_free){
@@ -288,6 +295,7 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
     panic("uvmfirst: more than a page");
   mem = kalloc();
   memset(mem, 0, PGSIZE);
+  //printf("pa in uvminit: %p\n", mem);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
 }

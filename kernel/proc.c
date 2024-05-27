@@ -161,6 +161,7 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz, p->pid);
+  //printf("p->pid: %d\n", p->pid);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;

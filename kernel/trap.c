@@ -46,7 +46,6 @@ trapinithart(void)
 void
 usertrap(void)
 {
-  //printf("usertrap\n");
   int which_dev = 0;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
@@ -84,12 +83,13 @@ usertrap(void)
     //copy on write
     uint64 stval = r_stval();
     uint64 addr = PGROUNDDOWN(stval);
+    //printf("store page fault addr: %p\n", addr);
     pte_t* pte = walk(p->pagetable, addr, 0);
     //get the pa and hash value
     uint64 pa = PTE2PA(*pte);
     uint64 hash = xxh64((void*)pa, PGSIZE);
     int perm = PTE_FLAGS(*pte);
-    printf("pa: %p , hash: %p\n", pa, hash);
+    //printf("pa: %p , hash: %p, write permission: %p\n", pa, hash, perm&PTE_W);
     //check if the page is zero page or if the page is in the stable tree
     if(hash == zero_page_hash){
       //allocate the new page and change pte to this page.
@@ -99,12 +99,21 @@ usertrap(void)
         return;
       }
       memset((void*)new_pa, 0, PGSIZE);
-      *pte = PA2PTE(new_pa) | perm | PTE_W | PTE_V;
-      //printf("Copy the zero page to new page\n");
+      //extract the reserved bit from perm
+      int reserved = perm & 1<<8;
+      if(reserved != 0){
+        perm = perm | PTE_W;
+        perm = perm & ~(1<<8);
+      }
+      *pte = PA2PTE(new_pa) | perm | PTE_V;
+      //return to user and retry the store instruction
+      //printf("new pa: %p, write permissions: %p, hash value: %p\n", new_pa, perm|PTE_W, xxh64((void*)new_pa, PGSIZE));
+      // printf("new hash: %p\n", xxh64((void*)new_pa, PGSIZE));
     }
     else if(find_stable(stable_tree, hash) != 0){
       //delete in the stable tree
-      delete_stable(stable_tree, hash, 0, p->pid);
+      delete_stable(stable_tree, hash, -1, p->pid, addr, 0);
+      //printf("pid : %d, pte: %p\n", p->pid, *pte);
       //allocate the new page and change pte to this page.
       uint64* new_pa = kalloc();
       if(new_pa == 0){
@@ -112,11 +121,23 @@ usertrap(void)
         return;
       }
       memmove((void*)new_pa, (void*)pa, PGSIZE);
-      *pte = PA2PTE(new_pa) | perm | PTE_W | PTE_V;
-      //printf("Copy the stable page to new page\n");
+      int reserved = perm & 1<<8;
+      if(reserved != 0){
+        perm = perm | PTE_W;
+        perm = perm & ~(1<<8);
+      }
+      *pte = PA2PTE(new_pa) | perm | PTE_V;
+      //printf("new pa: %p\n", new_pa);
     }
     else{
       printf("Error. User doesn't have write permission.\n");
+      printf("pid: %p\n", p->pid);
+      printf("perm: %p\n", perm);
+      printf("pa: %p\n", pa);
+      printf("hash: %p\n", hash);
+      printf("stable tree\n");
+      print_tree(stable_tree);
+      exit(-1);
     }
   } 
   else {
@@ -199,7 +220,6 @@ kerneltrap()
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
   }
-
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();

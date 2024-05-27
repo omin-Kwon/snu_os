@@ -9,6 +9,7 @@
         "fstream": "c",
         "locale": "c",
         "proc.h": "c",
-        "ostream": "c"
+        "ostream": "c",
+        "array": "c"
     }
 }
