@@ -155,6 +155,11 @@ consoleintr(int c)
       consputc(BACKSPACE);
     }
     break;
+#ifdef SNU
+  case C('F'): // Filesystem info
+    fsinfo();
+    break;
+#endif
   default:
     if(c != 0 && cons.e-cons.r < INPUT_BUF_SIZE){
       c = (c == '\r') ? '\n' : c;

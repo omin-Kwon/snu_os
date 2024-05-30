@@ -19,10 +19,20 @@ struct superblock {
   uint nlog;         // Number of log blocks
   uint logstart;     // Block number of first log block
   uint inodestart;   // Block number of first inode block
+#ifdef SNU
+  uint nfat;         // Number of FAT blocks
+  uint fatstart;     // Block number of first FAT block
+  uint freehead;     // Head of the free block list
+  uint freeblks;     // Number of free data blocks
+#else
   uint bmapstart;    // Block number of first free map block
+#endif
 };
 
 #define FSMAGIC 0x10203040
+#ifdef SNU
+#define FSMAGIC_FATTY 0x46415459    // FATY
+#endif
 
 #define NDIRECT 12
 #define NINDIRECT (BSIZE / sizeof(uint))
@@ -35,7 +45,11 @@ struct dinode {
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
+#ifdef SNU
+  uint  startblk;       // First block number
+#else
   uint addrs[NDIRECT+1];   // Data block addresses
+#endif
 };
 
 // Inodes per block.

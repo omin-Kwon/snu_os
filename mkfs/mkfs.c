@@ -15,7 +15,10 @@
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
 
+#ifndef SNU
+// NINODES moved to kernel/param.h
 #define NINODES 200
+#endif
 
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]

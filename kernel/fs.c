@@ -695,3 +695,11 @@ nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
 }
+
+#ifdef SNU
+void
+fsinfo(void)
+{
+  printf("Free blocks: %d\n", sb.freeblks);
+}
+#endif

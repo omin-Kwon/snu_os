@@ -503,3 +503,19 @@ sys_pipe(void)
   }
   return 0;
 }
+
+#ifdef SNU
+uint64
+sys_sync(void)
+{
+  // FILL HERE
+
+
+
+
+
+
+
+
+}
+#endif
