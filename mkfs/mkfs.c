@@ -50,7 +50,8 @@ int falloc(uint linkblock);
 int rfat(uint startblock);
 void print_fatblock();
 void print_inodeblocks();
-void read_datablks(uint blknum);
+void read_dirblocks(uint blknum);
+void read_superblock();
 
 // convert to riscv byte order
 ushort
@@ -117,7 +118,7 @@ main(int argc, char *argv[])
   sb.fatstart = xint(2+nlog);
   sb.freehead = xint(nmeta);
   sb.freeblks = xint(nblocks);
-  sb.inodestart = xint(2+nlog+nfatblocks);
+  sb.inodestart = xint( 2 + nlog + nfatblocks );
   //printf("nmeta %d (boot, super, log blocks %u, fat blocks %u, inode blocks %u) blocks %d total %d\n", nmeta, nlog, nfatblocks ,ninodeblocks, nblocks, FSSIZE);
 
 
@@ -176,12 +177,12 @@ main(int argc, char *argv[])
     strncpy(de.name, shortname, DIRSIZ);
     iappend(rootino, &de, sizeof(de));
 
-    int total_filesize = 0;
+    //int total_filesize = 0;
     while((cc = read(fd, buf, sizeof(buf))) > 0){
-      total_filesize += cc;
+      //total_filesize += cc;
       iappend(inum, buf, cc);
     }
-    printf("total_filesize: %d\n", total_filesize);
+    //printf("total_filesize: %d\n", total_filesize);
     //fix size of the file
     // rinode(inum, &din);
     // off = xint(din.size);
@@ -197,9 +198,10 @@ main(int argc, char *argv[])
   off = ((off/BSIZE) + 1) * BSIZE;
   din.size = xint(off);
   winode(rootino, &din);
-  print_inodeblocks();
+  //print_inodeblocks();
   print_fatblock();
-  //read_datablks(44);
+  //read_dirblocks(44);
+  //read_superblock();
   exit(0);
 }
 
@@ -361,6 +363,11 @@ void initfat(void)
 
 
 int falloc(uint linkblock){
+  //read the superblock and store to sb
+  char* buf = (char*)malloc(BSIZE);
+  rsect(1, buf);
+  memmove(&sb, buf, sizeof(sb));
+  free(buf);
   //check the freeblks count
   if(sb.freeblks == 0){
     //printf("no free block\n");
@@ -391,6 +398,11 @@ int falloc(uint linkblock){
     wsect(sb.fatstart + i, (char*)(fatbuf + i * BSIZE));
   }
   free(fatbuf);
+  //save the super block
+  buf = (char*)malloc(BSIZE);
+  memmove(buf, &sb, sizeof(sb));
+  wsect(1, buf);
+  free(buf);
   return freeblk;
 }
 
@@ -417,7 +429,7 @@ int rfat(uint startblock){
 
 
 void print_fatblock(){
-  printf("freehead: %d\n", sb.freehead);
+  printf("freeheads: %d\n", sb.freehead);
   char* fatbuf = (char*)malloc(nfatblocks * BSIZE);
   //read the fat blocks
   for(int i = 0; i < nfatblocks; i++){
@@ -450,15 +462,25 @@ void print_inodeblocks(){
       printf("inode[%d]: type %d, major %d, minor %d, nlink %d, size %d, datablks %d, startblk %d\n", offset + j, din->type, din->major, din->minor, din->nlink, din->size, num_datablks ,din->startblk);
     }
   }
+  printf("sb.freehead: %d, sb.freeblks: %d, sb.magicnum: %d\n", sb.freehead, sb.freeblks, sb.magic);
 }
 
 
-void read_datablks(uint blknum){
+void read_dirblocks(uint blknum){
   char* buf = (char*)malloc(BSIZE);
   rsect(blknum, buf);
   struct dirent* de = (struct dirent*)buf;
   for(int i = 0; i < BSIZE / sizeof(struct dirent); i++){
     printf("de[%d]: inum %d, name %s\n", i, de[i].inum, de[i].name);
   }
+  free(buf);
+}
+
+
+void read_superblock(){
+  char* buf = (char*)malloc(BSIZE);
+  rsect(1, buf);
+  struct superblock* sb = (struct superblock*)buf;
+  printf("sb.magic: %d, sb.size: %d, sb.nblocks: %d, sb.ninodes: %d, sb.nlog: %d, sb.logstart: %d, sb.nfat: %d, sb.fatstart: %d, sb.freehead: %d, sb.freeblks: %d, sb.inodestart: %d\n", sb->magic, sb->size, sb->nblocks, sb->ninodes, sb->nlog, sb->logstart, sb->nfat, sb->fatstart, sb->freehead, sb->freeblks, sb->inodestart);
   free(buf);
 }

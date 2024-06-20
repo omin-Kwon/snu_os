@@ -88,36 +88,24 @@ bzero(int dev, int bno)
 // }
 
 static uint
-balloc(uint dev, int linkblk)
-{
+balloc(uint dev, int linkblk, struct buf *bp[], int *fatbuf[])
+{ 
+  //printf("balloc: linkblk %d\n", linkblk);
   //read the fat blocks, we should lock the fat blocks
-  struct buf *bp[sb.nfat];
-  int *fatbuf[sb.nfat];
-
-
-  for(int i = 0; i < sb.nfat; i++){
-    bp[i] = bread(dev, sb.fatstart + i);
-    fatbuf[i] = (int*)bp[i]->data;
-  }
-
   //search the free block and allocate the new block
   int freehead = sb.freehead;
+  //printf("old_freehead %d\n", freehead);  
   int newblk = freehead;
   int next_freehead = fatbuf[FFBLOCK(freehead)][freehead % FPB];
+  //printf("next_freehead %d\n", next_freehead);
   fatbuf[FFBLOCK(freehead)][freehead % FPB] = 0;
   sb.freehead = next_freehead;
   sb.freeblks--;
   if(linkblk != 0){
     fatbuf[FFBLOCK(linkblk)][linkblk % FPB] = newblk;
   }
-  //logwrite
-  for(int i = 0; i < sb.nfat; i++){
-    log_write(bp[i]);
-    brelse(bp[i]);
-  }
   //initialize the new block with 0
   bzero(dev, newblk);
-
   return newblk;
 }
 
@@ -152,6 +140,8 @@ bfree(int dev, uint b)
 
   //free the block
   int old_freehead = sb.freehead;
+  //printf("bfree: old_freehead %d\n", old_freehead);
+  //printf("fatbuf[FFBLOCK(b)][b % FPB] %d\n", fatbuf[FFBLOCK(b)][b % FPB]);
   //search the file's block
   int file_blk = b;
   int count = 1;
@@ -450,60 +440,36 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
+  //printf("bmap, ip->inum %d, bn %d, startblk %d\n", ip->inum, bn, ip->startblk);
+
   uint addr;
   struct buf *bp[sb.nfat];
   int *fatbuf[sb.nfat];
-
-
-  // Traditional style
-  // if(bn < NDIRECT){
-  //   if((addr = ip->addrs[bn]) == 0){
-  //     addr = balloc(ip->dev);
-  //     if(addr == 0)
-  //       return 0;
-  //     ip->addrs[bn] = addr;
-  //   }
-  //   return addr;
-  // }
-  // bn -= NDIRECT;
-
-  // if(bn < NINDIRECT){
-  //   // Load indirect block, allocating if necessary.
-  //   if((addr = ip->addrs[NDIRECT]) == 0){
-  //     addr = balloc(ip->dev);
-  //     if(addr == 0)
-  //       return 0;
-  //     ip->addrs[NDIRECT] = addr;
-  //   }
-  //   bp = bread(ip->dev, addr);
-  //   a = (uint*)bp->data;
-  //   if((addr = a[bn]) == 0){
-  //     addr = balloc(ip->dev);
-  //     if(addr){
-  //       a[bn] = addr;
-  //       log_write(bp);
-  //     }
-  //   }
-  //   brelse(bp);
-  //   return addr;
-  // }
-
-  // SNU FATty style
-
   int startblk = ip->startblk;
-
-  // Read the fat blocks and store it to the buffer
-
   // Read the fat blocks
   int i;
   for(i = 0; i < sb.nfat; i++){
     bp[i] = bread(ip->dev, sb.fatstart + i);
     fatbuf[i] = (int*)bp[i]->data;
   }
+  //printf("fatbuf[742]: %d\n", fatbuf[2][230]);
 
+  int change = 0;
+
+  if(startblk == 0){
+    startblk = balloc(ip->dev, 0, bp, fatbuf);
+    change = 1;
+    if(startblk == 0){
+      printf("bmap: out of disk space\n");
+      return 0;
+    }
+    ip->startblk = startblk;
+  }
+  
 
   // Search the bn's block
   for(int i = 0; i < bn; i++){
+    //printf("search the block %d\n", i);
     //int temp = fatblocks[startblk];
     int temp = fatbuf[FFBLOCK(startblk)][startblk % FPB];
     if(temp == -1){
@@ -511,8 +477,9 @@ bmap(struct inode *ip, uint bn)
       return 0;
     }
     else if(temp == 0){
-      printf("end of file. allocate the new block\n");
-      int newblk = balloc(ip->dev, startblk);
+      //printf("end of file. allocate the new block\n");
+      int newblk = balloc(ip->dev, startblk, bp, fatbuf);
+      change = 1;
       if(newblk == 0){
         printf("bmap: out of disk space\n");
         return 0;
@@ -525,12 +492,12 @@ bmap(struct inode *ip, uint bn)
   }
 
   for(i = 0; i < sb.nfat; i++){
+    if(change == 1)
+      log_write(bp[i]);
     brelse(bp[i]);
   }
-
   addr = startblk;
   return addr;
-
   //panic("bmap: out of range");
 }
 
@@ -562,12 +529,12 @@ itrunc(struct inode *ip)
   //   bfree(ip->dev, ip->addrs[NDIRECT]);
   //   ip->addrs[NDIRECT] = 0;
   // }
-
-  bfree(ip->dev, ip->startblk);
-  ip->startblk = 0;
-
-
-
+  //printf("itrunc: startblk %d, ip->inum %d\n, sb.freehead %d\n", ip->startblk, ip->inum, sb.freehead);
+  if(ip->startblk != 0){
+    bfree(ip->dev, ip->startblk);
+    ip->startblk = 0;
+  }
+  ip->size = 0;
   iupdate(ip);
 }
 
