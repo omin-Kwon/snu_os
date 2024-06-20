@@ -41,7 +41,7 @@ readsb(int dev, struct superblock *sb)
 void
 fsinit(int dev) {
   readsb(dev, &sb);
-  if(sb.magic != FSMAGIC)
+  if(sb.magic != FSMAGIC_FATTY)
     panic("invalid file system");
   initlog(dev, &sb);
 }
@@ -62,46 +62,113 @@ bzero(int dev, int bno)
 
 // Allocate a zeroed disk block.
 // returns 0 if out of disk space.
-static uint
-balloc(uint dev)
-{
-  int b, bi, m;
-  struct buf *bp;
+// static uint
+// balloc(uint dev)
+// {
+//   int b, bi, m;
+//   struct buf *bp;
 
-  bp = 0;
-  for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
-    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
-      m = 1 << (bi % 8);
-      if((bp->data[bi/8] & m) == 0){  // Is block free?
-        bp->data[bi/8] |= m;  // Mark block in use.
-        log_write(bp);
-        brelse(bp);
-        bzero(dev, b + bi);
-        return b + bi;
-      }
-    }
-    brelse(bp);
+//   bp = 0;
+//   for(b = 0; b < sb.size; b += BPB){
+//     bp = bread(dev, BBLOCK(b, sb));
+//     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
+//       m = 1 << (bi % 8);
+//       if((bp->data[bi/8] & m) == 0){  // Is block free?
+//         bp->data[bi/8] |= m;  // Mark block in use.
+//         log_write(bp);
+//         brelse(bp);
+//         bzero(dev, b + bi);
+//         return b + bi;
+//       }
+//     }
+//     brelse(bp);
+//   }
+//   printf("balloc: out of blocks\n");
+//   return 0;
+// }
+
+static uint
+balloc(uint dev, int linkblk)
+{
+  //read the fat blocks, we should lock the fat blocks
+  struct buf *bp[sb.nfat];
+  int *fatbuf[sb.nfat];
+
+
+  for(int i = 0; i < sb.nfat; i++){
+    bp[i] = bread(dev, sb.fatstart + i);
+    fatbuf[i] = (int*)bp[i]->data;
   }
-  printf("balloc: out of blocks\n");
-  return 0;
+
+  //search the free block and allocate the new block
+  int freehead = sb.freehead;
+  int newblk = freehead;
+  int next_freehead = fatbuf[FFBLOCK(freehead)][freehead % FPB];
+  fatbuf[FFBLOCK(freehead)][freehead % FPB] = 0;
+  sb.freehead = next_freehead;
+  sb.freeblks--;
+  if(linkblk != 0){
+    fatbuf[FFBLOCK(linkblk)][linkblk % FPB] = newblk;
+  }
+  //logwrite
+  for(int i = 0; i < sb.nfat; i++){
+    log_write(bp[i]);
+    brelse(bp[i]);
+  }
+  //initialize the new block with 0
+  bzero(dev, newblk);
+
+  return newblk;
 }
+
+
 
 // Free a disk block.
 static void
 bfree(int dev, uint b)
 {
-  struct buf *bp;
-  int bi, m;
 
-  bp = bread(dev, BBLOCK(b, sb));
-  bi = b % BPB;
-  m = 1 << (bi % 8);
-  if((bp->data[bi/8] & m) == 0)
-    panic("freeing free block");
-  bp->data[bi/8] &= ~m;
-  log_write(bp);
-  brelse(bp);
+  // bp = bread(dev, BBLOCK(b, sb));
+  // bi = b % BPB;
+  // m = 1 << (bi % 8);
+  // if((bp->data[bi/8] & m) == 0)
+  //   panic("freeing free block");
+  // bp->data[bi/8] &= ~m;
+  // log_write(bp);
+  // brelse(bp);
+
+  //uint b is the startblk of the file
+  //read the fat blocks
+  if( b == 0){
+    return;
+  }
+  struct buf *bp[sb.nfat];
+  int *fatbuf[sb.nfat];
+
+  for(int i = 0; i < sb.nfat; i++){
+    bp[i] = bread(dev, sb.fatstart + i);
+    fatbuf[i] = (int*)bp[i]->data;
+  }
+
+  //free the block
+  int old_freehead = sb.freehead;
+  //search the file's block
+  int file_blk = b;
+  int count = 1;
+
+
+  while(fatbuf[FFBLOCK(file_blk)][file_blk % FPB]!=0){
+    file_blk = fatbuf[FFBLOCK(file_blk)][file_blk % FPB];
+    count++;
+  }
+  fatbuf[FFBLOCK(file_blk)][file_blk % FPB] = old_freehead;
+  sb.freehead = b;
+  sb.freeblks += count;
+  //write the fat blocks
+  for(int i = 0; i < sb.nfat; i++){
+    log_write(bp[i]);
+    brelse(bp[i]);
+  }
 }
 
 // Inodes.
@@ -235,7 +302,7 @@ iupdate(struct inode *ip)
   dip->minor = ip->minor;
   dip->nlink = ip->nlink;
   dip->size = ip->size;
-  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+  dip->startblk = ip->startblk;
   log_write(bp);
   brelse(bp);
 }
@@ -308,7 +375,8 @@ ilock(struct inode *ip)
     ip->minor = dip->minor;
     ip->nlink = dip->nlink;
     ip->size = dip->size;
-    memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+    ip->startblk = dip->startblk;
+    //memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
     brelse(bp);
     ip->valid = 1;
     if(ip->type == 0)
@@ -382,73 +450,124 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
-  struct buf *bp;
+  uint addr;
+  struct buf *bp[sb.nfat];
+  int *fatbuf[sb.nfat];
 
-  if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0){
-      addr = balloc(ip->dev);
-      if(addr == 0)
-        return 0;
-      ip->addrs[bn] = addr;
-    }
-    return addr;
+
+  // Traditional style
+  // if(bn < NDIRECT){
+  //   if((addr = ip->addrs[bn]) == 0){
+  //     addr = balloc(ip->dev);
+  //     if(addr == 0)
+  //       return 0;
+  //     ip->addrs[bn] = addr;
+  //   }
+  //   return addr;
+  // }
+  // bn -= NDIRECT;
+
+  // if(bn < NINDIRECT){
+  //   // Load indirect block, allocating if necessary.
+  //   if((addr = ip->addrs[NDIRECT]) == 0){
+  //     addr = balloc(ip->dev);
+  //     if(addr == 0)
+  //       return 0;
+  //     ip->addrs[NDIRECT] = addr;
+  //   }
+  //   bp = bread(ip->dev, addr);
+  //   a = (uint*)bp->data;
+  //   if((addr = a[bn]) == 0){
+  //     addr = balloc(ip->dev);
+  //     if(addr){
+  //       a[bn] = addr;
+  //       log_write(bp);
+  //     }
+  //   }
+  //   brelse(bp);
+  //   return addr;
+  // }
+
+  // SNU FATty style
+
+  int startblk = ip->startblk;
+
+  // Read the fat blocks and store it to the buffer
+
+  // Read the fat blocks
+  int i;
+  for(i = 0; i < sb.nfat; i++){
+    bp[i] = bread(ip->dev, sb.fatstart + i);
+    fatbuf[i] = (int*)bp[i]->data;
   }
-  bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0){
-      addr = balloc(ip->dev);
-      if(addr == 0)
-        return 0;
-      ip->addrs[NDIRECT] = addr;
+
+  // Search the bn's block
+  for(int i = 0; i < bn; i++){
+    //int temp = fatblocks[startblk];
+    int temp = fatbuf[FFBLOCK(startblk)][startblk % FPB];
+    if(temp == -1){
+      panic("bmap: meta block");
+      return 0;
     }
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
-      addr = balloc(ip->dev);
-      if(addr){
-        a[bn] = addr;
-        log_write(bp);
+    else if(temp == 0){
+      printf("end of file. allocate the new block\n");
+      int newblk = balloc(ip->dev, startblk);
+      if(newblk == 0){
+        printf("bmap: out of disk space\n");
+        return 0;
       }
+      startblk = newblk;
     }
-    brelse(bp);
-    return addr;
+    else{
+      startblk = temp;
+    }
   }
 
-  panic("bmap: out of range");
+  for(i = 0; i < sb.nfat; i++){
+    brelse(bp[i]);
+  }
+
+  addr = startblk;
+  return addr;
+
+  //panic("bmap: out of range");
 }
+
+
+
+
+
 
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
 void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  // for(i = 0; i < NDIRECT; i++){
+  //   if(ip->addrs[i]){
+  //     bfree(ip->dev, ip->addrs[i]);
+  //     ip->addrs[i] = 0;
+  //   }
+  // }
 
-  for(i = 0; i < NDIRECT; i++){
-    if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
-      ip->addrs[i] = 0;
-    }
-  }
+  // if(ip->addrs[NDIRECT]){
+  //   bp = bread(ip->dev, ip->addrs[NDIRECT]);
+  //   a = (uint*)bp->data;
+  //   for(j = 0; j < NINDIRECT; j++){
+  //     if(a[j])
+  //       bfree(ip->dev, a[j]);
+  //   }
+  //   brelse(bp);
+  //   bfree(ip->dev, ip->addrs[NDIRECT]);
+  //   ip->addrs[NDIRECT] = 0;
+  // }
 
-  if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
-    a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
-      if(a[j])
-        bfree(ip->dev, a[j]);
-    }
-    brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
-    ip->addrs[NDIRECT] = 0;
-  }
+  bfree(ip->dev, ip->startblk);
+  ip->startblk = 0;
 
-  ip->size = 0;
+
+
   iupdate(ip);
 }
 
@@ -470,7 +589,7 @@ stati(struct inode *ip, struct stat *st)
 // otherwise, dst is a kernel address.
 int
 readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
-{
+{ 
   uint tot, m;
   struct buf *bp;
 

@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "__config": "c",
+        "iomanip": "c",
+        "istream": "c",
+        "locale": "c"
+    }
+}

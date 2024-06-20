@@ -44,16 +44,16 @@ struct dinode {
   short major;          // Major device number (T_DEVICE only)
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
-  uint size;            // Size of file (bytes)
+  uint size;            // Size of file (bytes) //12
 #ifdef SNU
-  uint  startblk;       // First block number
+  uint  startblk;       // First block number // 4
 #else
-  uint addrs[NDIRECT+1];   // Data block addresses
+  uint addrs[NDIRECT+1];   // Data block addresses //13*4 = 52
 #endif
 };
 
 // Inodes per block.
-#define IPB           (BSIZE / sizeof(struct dinode))
+#define IPB           (BSIZE / sizeof(struct dinode)) // 1024 / 64 = 16 or 1024 / 16 = 64
 
 // Block containing inode i
 #define IBLOCK(i, sb)     ((i) / IPB + sb.inodestart)
@@ -62,7 +62,11 @@ struct dinode {
 #define BPB           (BSIZE*8)
 
 // Block of free map containing bit for block b
-#define BBLOCK(b, sb) ((b)/BPB + sb.bmapstart)
+//#define BBLOCK(b, sb) ((b)/BPB + sb.bmapstart)
+
+#define FPB           (BSIZE/sizeof(uint))
+
+#define FFBLOCK(b) ((b)/FPB)
 
 // Directory is a file containing a sequence of dirent structures.
 #define DIRSIZ 14

@@ -20,12 +20,15 @@
 #define NINODES 200
 #endif
 
-// Disk layout:
-// [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
-int nbitmap = FSSIZE/(BSIZE*8) + 1;
-int ninodeblocks = NINODES / IPB + 1;
-int nlog = LOGSIZE;
+// Disk layout:
+// [ boot block | sb block | log | fat blocks | inode blocks | data blocks ]
+
+//SNU
+int nfatblocks = (FSSIZE * 4)/ BSIZE + 1;
+int ninodeblocks = NINODES / IPB + 1; // 200 / 16 + 1 = 13 -> 200 / 64 + 1 = 4
+int nlog = LOGSIZE; //30; 
 int nmeta;    // Number of meta blocks (boot, sb, nlog, inode, bitmap)
 int nblocks;  // Number of data blocks
 
@@ -33,10 +36,8 @@ int fsfd;
 struct superblock sb;
 char zeroes[BSIZE];
 uint freeinode = 1;
-uint freeblock;
 
 
-void balloc(int);
 void wsect(uint, void*);
 void winode(uint, struct dinode*);
 void rinode(uint inum, struct dinode *ip);
@@ -44,6 +45,12 @@ void rsect(uint sec, void *buf);
 uint ialloc(ushort type);
 void iappend(uint inum, void *p, int n);
 void die(const char *);
+void initfat(void);
+int falloc(uint linkblock);
+int rfat(uint startblock);
+void print_fatblock();
+void print_inodeblocks();
+void read_datablks(uint blknum);
 
 // convert to riscv byte order
 ushort
@@ -72,6 +79,7 @@ int
 main(int argc, char *argv[])
 {
   int i, cc, fd;
+  //int i, fd;
   uint rootino, inum, off;
   struct dirent de;
   char buf[BSIZE];
@@ -93,43 +101,54 @@ main(int argc, char *argv[])
     die(argv[1]);
 
   // 1 fs block = 1 disk sector
-  nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  //nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  nmeta = 2 + nlog + nfatblocks + ninodeblocks;
   nblocks = FSSIZE - nmeta;
 
-  sb.magic = FSMAGIC;
+  //sb.magic = FSMAGIC;
+  sb.magic = FSMAGIC_FATTY; //SNU
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
   sb.ninodes = xint(NINODES);
   sb.nlog = xint(nlog);
   sb.logstart = xint(2);
-  sb.inodestart = xint(2+nlog);
-  sb.bmapstart = xint(2+nlog+ninodeblocks);
+  //SNU
+  sb.nfat = xint(nfatblocks);
+  sb.fatstart = xint(2+nlog);
+  sb.freehead = xint(nmeta);
+  sb.freeblks = xint(nblocks);
+  sb.inodestart = xint(2+nlog+nfatblocks);
+  //printf("nmeta %d (boot, super, log blocks %u, fat blocks %u, inode blocks %u) blocks %d total %d\n", nmeta, nlog, nfatblocks ,ninodeblocks, nblocks, FSSIZE);
 
-  printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
-         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
-
-  freeblock = nmeta;     // the first free block that we can allocate
 
   for(i = 0; i < FSSIZE; i++)
     wsect(i, zeroes);
 
+  //allocate the superblock
   memset(buf, 0, sizeof(buf));
   memmove(buf, &sb, sizeof(sb));
   wsect(1, buf);
 
+  //1. allocate the root inode (DIR)
   rootino = ialloc(T_DIR);
   assert(rootino == ROOTINO);
 
+  //2. initialize the fat blocks
+  initfat();
+
+  //3. directory entry for root file
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
   strcpy(de.name, ".");
-  iappend(rootino, &de, sizeof(de));
+  iappend(rootino, &de, sizeof(de)); //append the . directory entry to the root data block
 
-  bzero(&de, sizeof(de));
+  bzero(&de, sizeof(de)); 
   de.inum = xshort(rootino);
   strcpy(de.name, "..");
-  iappend(rootino, &de, sizeof(de));
+  iappend(rootino, &de, sizeof(de)); //append the .. directory entry to the root data block
 
+
+  //4. add files
   for(i = 2; i < argc; i++){
     // get rid of "user/"
     char *shortname;
@@ -157,9 +176,18 @@ main(int argc, char *argv[])
     strncpy(de.name, shortname, DIRSIZ);
     iappend(rootino, &de, sizeof(de));
 
-    while((cc = read(fd, buf, sizeof(buf))) > 0)
+    int total_filesize = 0;
+    while((cc = read(fd, buf, sizeof(buf))) > 0){
+      total_filesize += cc;
       iappend(inum, buf, cc);
-
+    }
+    printf("total_filesize: %d\n", total_filesize);
+    //fix size of the file
+    // rinode(inum, &din);
+    // off = xint(din.size);
+    // off = ((off/BSIZE) + 1) * BSIZE;
+    // din.size = xint(off);
+    //winode(inum, &din);
     close(fd);
   }
 
@@ -169,9 +197,9 @@ main(int argc, char *argv[])
   off = ((off/BSIZE) + 1) * BSIZE;
   din.size = xint(off);
   winode(rootino, &din);
-
-  balloc(freeblock);
-
+  print_inodeblocks();
+  print_fatblock();
+  //read_datablks(44);
   exit(0);
 }
 
@@ -230,69 +258,69 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
+  din.startblk = xint(0); //initialize with the startblk 0  //SNU
   winode(inum, &din);
   return inum;
 }
 
-void
-balloc(int used)
-{
-  uchar buf[BSIZE];
-  int i;
 
-  printf("balloc: first %d blocks have been allocated\n", used);
-  assert(used < BSIZE*8);
-  bzero(buf, BSIZE);
-  for(i = 0; i < used; i++){
-    buf[i/8] = buf[i/8] | (0x1 << (i%8));
-  }
-  printf("balloc: write bitmap block at sector %d\n", sb.bmapstart);
-  wsect(sb.bmapstart, buf);
-}
-
-#define min(a, b) ((a) < (b) ? (a) : (b))
 
 void
 iappend(uint inum, void *xp, int n)
-{
+{ 
   char *p = (char*)xp;
-  uint fbn, off, n1;
+
+
+  uint startblk, lastblk, off, filesize;
   struct dinode din;
   char buf[BSIZE];
-  uint indirect[NINDIRECT];
-  uint x;
 
   rinode(inum, &din);
-  off = xint(din.size);
-  // printf("append inum %d at off %d sz %d\n", inum, off, n);
-  while(n > 0){
-    fbn = off / BSIZE;
-    assert(fbn < MAXFILE);
-    if(fbn < NDIRECT){
-      if(xint(din.addrs[fbn]) == 0){
-        din.addrs[fbn] = xint(freeblock++);
-      }
-      x = xint(din.addrs[fbn]);
-    } else {
-      if(xint(din.addrs[NDIRECT]) == 0){
-        din.addrs[NDIRECT] = xint(freeblock++);
-      }
-      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
-      if(indirect[fbn - NDIRECT] == 0){
-        indirect[fbn - NDIRECT] = xint(freeblock++);
-        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
-      }
-      x = xint(indirect[fbn-NDIRECT]);
-    }
-    n1 = min(n, (fbn + 1) * BSIZE - off);
-    rsect(x, buf);
-    bcopy(p, buf + off - (fbn * BSIZE), n1);
-    wsect(x, buf);
-    n -= n1;
-    off += n1;
-    p += n1;
+  startblk = xint(din.startblk); // startblk of the file
+  filesize = xint(din.size); //File size
+
+
+  off = filesize % BSIZE; //offset of the file. start position of the next write
+
+  //1. Find the last block of the file which we start to write
+  if(filesize == 0){ // if the file is empty
+    startblk = falloc(0);
+    din.startblk = xint(startblk);
+    lastblk = startblk;
   }
-  din.size = xint(off);
+  else if(off == 0){ //if the file size is multiple of BSIZE
+    lastblk = rfat(startblk);
+    lastblk = falloc(lastblk);
+    off = 0;
+  }
+  else{
+    lastblk = rfat(startblk);
+  }
+  //printf("inum: %d, requested_size: %d, startblk: %d, lastblk: %d, off: %d, filesize: %d\n", inum, n, startblk, lastblk, off, filesize);
+  //2. Write the data to the blocks
+  while(n > 0){
+    //read the last block
+    rsect(lastblk, buf);
+    //print the buf
+    //calculate the remaining space of the block
+    int n1 = min(n, BSIZE - off);
+    //copy the data to the block
+    bcopy(p, buf + off, n1);
+    //write the block
+    wsect(lastblk, buf);
+    //update the variables
+    n -= n1;
+    p += n1;
+    filesize += n1;
+    off = (off + n1) % BSIZE;
+    //printf("n1 %d, n %d, filesize %d\n", n1, n, filesize);
+    //allocate the next block
+    if(n > 0){
+      lastblk = falloc(lastblk);
+    }
+  }
+  //fix the size of the file
+  din.size = xint(filesize);
   winode(inum, &din);
 }
 
@@ -301,4 +329,136 @@ die(const char *s)
 {
   perror(s);
   exit(1);
+}
+
+void initfat(void)
+{
+  int i;
+  uint fatblock = sb.fatstart; //idx of start of fatblock
+  uint freehead = sb.freehead; //head idx of free list
+
+  uint fs_size = sb.size;
+  //printf("fs_size: %d\n", fs_size);
+  char* fatbuf = (char*)malloc(nfatblocks * BSIZE);
+  int* int_fatbuf = (int*)fatbuf;
+  for(int idx = 0; idx < fs_size; idx++){
+    //for metadata block, allocate the entry with 0
+    if(idx < freehead){
+      int_fatbuf[idx] = -1;
+    }
+    else{
+      int_fatbuf[idx] = idx + 1;
+      //printf("int_fatbuf[%d]: %d\n", idx, int_fatbuf[idx]);
+    }
+  }
+  //write the fat blocks
+  for(i = 0; i < nfatblocks; i++){
+    wsect(fatblock + i, (char*)fatbuf + i * BSIZE);
+  }
+  free(fatbuf);
+}
+
+
+
+int falloc(uint linkblock){
+  //check the freeblks count
+  if(sb.freeblks == 0){
+    //printf("no free block\n");
+    return -1;
+  }
+  //allocate the fatbuf and read the fat blocks
+  char* fatbuf = (char*)malloc(nfatblocks * BSIZE);
+  //read the fat blocks
+  for(int i = 0; i < nfatblocks; i++){
+    rsect(sb.fatstart + i, (char*)(fatbuf + i * BSIZE));
+  }
+  //find the free block
+  int freeblk = sb.freehead;
+  int* int_fatbuf = (int*)fatbuf;
+  sb.freehead = int_fatbuf[freeblk];
+  sb.freeblks--;
+  //link the block
+  if(linkblock == 0){
+    //it means that the requested block is the first block of the file
+    int_fatbuf[freeblk] = 0;
+  }
+  else{
+    int_fatbuf[linkblock] = freeblk;
+    int_fatbuf[freeblk] = 0;
+  }
+  //write the fat blocks
+  for(int i = 0; i < nfatblocks; i++){
+    wsect(sb.fatstart + i, (char*)(fatbuf + i * BSIZE));
+  }
+  free(fatbuf);
+  return freeblk;
+}
+
+
+
+
+int rfat(uint startblock){
+  //read the fat blocks
+  char* fatbuf = (char*)malloc(nfatblocks * BSIZE);
+  //read the fat blocks
+  for(int i = 0; i < nfatblocks; i++){
+    rsect(sb.fatstart + i, (char*)(fatbuf + i * BSIZE));
+  }
+  // find the last block
+  int lastblk = startblock;
+  int* int_fatbuf = (int*)fatbuf;
+  while(int_fatbuf[lastblk] != 0){
+    lastblk = int_fatbuf[lastblk];
+  }
+  free(fatbuf);
+  return lastblk;
+}
+
+
+
+void print_fatblock(){
+  printf("freehead: %d\n", sb.freehead);
+  char* fatbuf = (char*)malloc(nfatblocks * BSIZE);
+  //read the fat blocks
+  for(int i = 0; i < nfatblocks; i++){
+    rsect(sb.fatstart + i, (char*)(fatbuf + i * BSIZE));
+  }
+  for(int i = 0; i < nfatblocks-5; i++){
+    int* fat = (int*)((char*)fatbuf + i * BSIZE);
+    for(int j = i* (BSIZE/ sizeof(int)); j <i* (BSIZE/ sizeof(int)) +  BSIZE / sizeof(int); j++){
+      printf("fat[%d]: %d\n", j, fat[j-i* (BSIZE/ sizeof(int))]);
+    }
+  }
+  free(fatbuf);
+}
+
+
+void print_inodeblocks(){
+  int ninodeblocks = 4;
+  char* inodebuf = (char*)malloc(ninodeblocks * BSIZE);
+  //read the inode blocks
+  for(int i = 0; i < ninodeblocks; i++){
+    rsect(sb.inodestart + i, (char*)(inodebuf + i * BSIZE));
+  }
+  for(int i = 0; i < ninodeblocks; i++){
+    char* inodeblk = (char*)((char*)inodebuf + i * BSIZE);
+    int offset = i*IPB;
+    for(int j = 0; j < IPB; j++){
+      struct dinode* din = (struct dinode*)(inodeblk + j * sizeof(struct dinode));
+      int filesize = din->size;
+      int num_datablks = (filesize + BSIZE - 1) / BSIZE;
+      printf("inode[%d]: type %d, major %d, minor %d, nlink %d, size %d, datablks %d, startblk %d\n", offset + j, din->type, din->major, din->minor, din->nlink, din->size, num_datablks ,din->startblk);
+    }
+  }
+}
+
+
+void read_datablks(uint blknum){
+  char* buf = (char*)malloc(BSIZE);
+  rsect(blknum, buf);
+  struct dirent* de = (struct dirent*)buf;
+  for(int i = 0; i < BSIZE / sizeof(struct dirent); i++){
+    printf("de[%d]: inum %d, name %s\n", i, de[i].inum, de[i].name);
+  }
+  free(buf);
 }

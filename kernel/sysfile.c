@@ -509,13 +509,7 @@ uint64
 sys_sync(void)
 {
   // FILL HERE
-
-
-
-
-
-
-
+  return 0;
 
 }
 #endif
