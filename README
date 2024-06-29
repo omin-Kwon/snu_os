@@ -1,17 +1,55 @@
-Operating Systems SNU 2024 Projects
+# Operating Systems SNU 2024 Projects
+
 http://csl.snu.ac.kr/courses/4190.307/2024-1/
 
-Project #5: FATty File System
-Microsoft’s early FAT file system has a unique file index structure based on the File Allocation Table (FAT). The goal of this project is to implement the “FATty” file system, which modifies the file index structure of the existing xv6 file system to resemble that of the FAT file system.
+This repository contains the projects I worked on for the Operating Systems course at SNU in 2024. Below is a summary of each project along with its objectives and descriptions.
 
-Project #4: KSM (Kernel Samepage Merging)
-KSM (Kernel Samepage Merging) is a memory de-duplication feature that enables the kernel to consolidate identical memory pages into a single shared page across multiple processes, thereby saving memory. The objective of this project is to explore the virtual memory subsystem of xv6 by implementing the KSM feature.
+## Project #1: Hello World, xv6
 
-Project #3: The EDF (Earliest Deadline First) Scheduler
-Currently, the CPU scheduler of xv6 uses a simple round-robin policy. The goal of this project is to understand the scheduling subsystem of xv6 by implementing the EDF (Earliest Deadline First) scheduler used in real-time systems.
+**Objective**: Set up the development environment and familiarize with xv6.
 
-Project #2: System calls
-System calls are the interfaces that allow user applications to request various services from the operating system kernel. This project aims to understand how those system calls are implemented in xv6.
+**Description**:
 
-Project #1: Hello world, xv6
-xv6 is an instructional operating system developed by MIT based on Ken Thompson and Dennis Ritchie’s Unix version 6 (v6). In this course, we will use xv6-riscv, a version recently ported to a multi-core RISC-V machine. The goal of this project is to set up your development environment on Linux or macOS and familiarize yourself with our project submission server.
+-   xv6 is an instructional OS developed by MIT, based on Unix version 6.
+-   For this project, I set up xv6-riscv on a multi-core RISC-V machine.
+-   Tasks included setting up the development environment on Linux or macOS and familiarizing myself with the project submission server.
+
+## Project #2: System Calls
+
+**Objective**: Understand the implementation of system calls in xv6.
+
+**Description**:
+
+-   System calls are the interfaces allowing user applications to request services from the OS kernel.
+-   This project involved studying and implementing system calls within the xv6 operating system.
+
+## Project #3: The EDF (Earliest Deadline First) Scheduler
+
+**Objective**: Implement the EDF scheduler to learn about the scheduling subsystem of xv6.
+
+**Description**:
+
+-   The existing CPU scheduler in xv6 uses a simple round-robin policy.
+-   In this project, I implemented the EDF scheduler, which is used in real-time systems to manage CPU scheduling based on task deadlines.
+
+## Project #4: KSM (Kernel Samepage Merging)
+
+**Objective**: Explore the virtual memory subsystem by implementing KSM.
+
+**Description**:
+
+-   KSM is a memory de-duplication feature that merges identical memory pages into a single shared page across multiple processes, saving memory.
+-   This project involved implementing the KSM feature in the xv6 operating system.
+
+## Project #5: FATty File System
+
+**Objective**: Modify the file index structure of xv6 to resemble the FAT file system.
+
+**Description**:
+
+-   The FAT file system by Microsoft has a unique file index structure based on the File Allocation Table (FAT).
+-   The goal of this project was to adapt the file system in xv6 to mimic the structure of the FAT system.
+
+---
+
+Feel free to explore each project folder for detailed information and my implementations.
