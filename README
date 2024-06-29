@@ -1,6 +1,6 @@
 # Operating Systems SNU 2024 Projects
 
-http://csl.snu.ac.kr/courses/4190.307/2024-1/
+[Course Link](http://csl.snu.ac.kr/courses/4190.307/2024-1/)
 
 This repository contains the projects I worked on for the Operating Systems course at SNU in 2024. Below is a summary of each project along with its objectives and descriptions.
 
@@ -51,5 +51,3 @@ This repository contains the projects I worked on for the Operating Systems cour
 -   The goal of this project was to adapt the file system in xv6 to mimic the structure of the FAT system.
 
 ---
-
-Feel free to explore each project folder for detailed information and my implementations.
