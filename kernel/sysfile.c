@@ -15,6 +15,13 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "buf.h"
+
+extern struct superblock sb;
+extern struct{
+  struct sleeplock lock;
+  int fat[((FSSIZE/BSIZE)+1)*BSIZE];
+} fattable;
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -508,8 +515,20 @@ sys_pipe(void)
 uint64
 sys_sync(void)
 {
-  // FILL HERE
-  return 0;
+  begin_op();
+  struct buf *b;
+  b = bread(ROOTDEV, 1);
+  memmove(b->data, &sb, sizeof(sb));
+  bwrite(b);
+  brelse(b);
 
+  for(int i = 0; i < sb.nfat; i++){
+    b = bread(ROOTDEV, sb.fatstart + i);
+    memmove(b->data, fattable.fat + i * BSIZE/4 , BSIZE);
+    bwrite(b);
+    brelse(b);
+  }
+  end_op();
+  return 0;
 }
 #endif

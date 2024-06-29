@@ -26,12 +26,31 @@
 // only one device
 struct superblock sb; 
 
+
+//ftable
+struct{
+  struct sleeplock lock;
+  int fat[((FSSIZE/BSIZE)+1)*BSIZE];
+} fattable;
+
+
+static void
+readfat(int dev)
+{
+  struct buf *bp;
+  for(int i = 0; i < sb.nfat; i++){
+    bp = bread(dev, sb.fatstart + i); // 버퍼 읽기
+    memmove(fattable.fat + i * FPB, bp->data, BSIZE); // 데이터 복사
+    brelse(bp); // 버퍼 해제
+  }
+}
+
+
 // Read the super block.
 static void
 readsb(int dev, struct superblock *sb)
 {
   struct buf *bp;
-
   bp = bread(dev, 1);
   memmove(sb, bp->data, sizeof(*sb));
   brelse(bp);
@@ -41,6 +60,8 @@ readsb(int dev, struct superblock *sb)
 void
 fsinit(int dev) {
   readsb(dev, &sb);
+  initsleeplock(&fattable.lock, "fattable");
+  readfat(dev);
   if(sb.magic != FSMAGIC_FATTY)
     panic("invalid file system");
   initlog(dev, &sb);
@@ -88,21 +109,28 @@ bzero(int dev, int bno)
 // }
 
 static uint
-balloc(uint dev, int linkblk, struct buf *bp[], int *fatbuf[])
+balloc(uint dev, int linkblk)
 { 
   //printf("balloc: linkblk %d\n", linkblk);
   //read the fat blocks, we should lock the fat blocks
   //search the free block and allocate the new block
+
+  int* fatbuf = fattable.fat;
   int freehead = sb.freehead;
   //printf("old_freehead %d\n", freehead);  
   int newblk = freehead;
-  int next_freehead = fatbuf[FFBLOCK(freehead)][freehead % FPB];
-  //printf("next_freehead %d\n", next_freehead);
-  fatbuf[FFBLOCK(freehead)][freehead % FPB] = 0;
+  int next_freehead = fatbuf[freehead];
   sb.freehead = next_freehead;
   sb.freeblks--;
+  if(sb.freeblks == -1){
+    sb.freeblks = 0;
+    sb.freehead = 0;
+    return 0;
+  }
+  //printf("next_freehead %d\n", next_freehead);
+  fatbuf[freehead] = 0;
   if(linkblk != 0){
-    fatbuf[FFBLOCK(linkblk)][linkblk % FPB] = newblk;
+    fatbuf[linkblk] = newblk;
   }
   //initialize the new block with 0
   bzero(dev, newblk);
@@ -127,38 +155,19 @@ bfree(int dev, uint b)
 
   //uint b is the startblk of the file
   //read the fat blocks
-  if( b == 0){
-    return;
-  }
-  struct buf *bp[sb.nfat];
-  int *fatbuf[sb.nfat];
-
-  for(int i = 0; i < sb.nfat; i++){
-    bp[i] = bread(dev, sb.fatstart + i);
-    fatbuf[i] = (int*)bp[i]->data;
-  }
-
+  int *fatbuf = fattable.fat;
   //free the block
   int old_freehead = sb.freehead;
-  //printf("bfree: old_freehead %d\n", old_freehead);
-  //printf("fatbuf[FFBLOCK(b)][b % FPB] %d\n", fatbuf[FFBLOCK(b)][b % FPB]);
-  //search the file's block
   int file_blk = b;
   int count = 1;
 
-
-  while(fatbuf[FFBLOCK(file_blk)][file_blk % FPB]!=0){
-    file_blk = fatbuf[FFBLOCK(file_blk)][file_blk % FPB];
+  while(fatbuf[file_blk]!=0){
+    file_blk = fatbuf[file_blk];
     count++;
   }
-  fatbuf[FFBLOCK(file_blk)][file_blk % FPB] = old_freehead;
+  fatbuf[file_blk] = old_freehead;
   sb.freehead = b;
   sb.freeblks += count;
-  //write the fat blocks
-  for(int i = 0; i < sb.nfat; i++){
-    log_write(bp[i]);
-    brelse(bp[i]);
-  }
 }
 
 // Inodes.
@@ -234,6 +243,8 @@ struct {
   struct spinlock lock;
   struct inode inode[NINODE];
 } itable;
+
+
 
 void
 iinit()
@@ -443,62 +454,35 @@ bmap(struct inode *ip, uint bn)
   //printf("bmap, ip->inum %d, bn %d, startblk %d\n", ip->inum, bn, ip->startblk);
 
   uint addr;
-  struct buf *bp[sb.nfat];
-  int *fatbuf[sb.nfat];
   int startblk = ip->startblk;
   // Read the fat blocks
-  int i;
-  for(i = 0; i < sb.nfat; i++){
-    bp[i] = bread(ip->dev, sb.fatstart + i);
-    fatbuf[i] = (int*)bp[i]->data;
-  }
-  //printf("fatbuf[742]: %d\n", fatbuf[2][230]);
-
-  int change = 0;
+  int *fatbuf = fattable.fat;
 
   if(startblk == 0){
-    startblk = balloc(ip->dev, 0, bp, fatbuf);
-    change = 1;
-    if(startblk == 0){
-      printf("bmap: out of disk space\n");
+    acquiresleep(&fattable.lock);
+    startblk = balloc(ip->dev, 0);
+    releasesleep(&fattable.lock);
+    if(startblk == 0)
       return 0;
-    }
     ip->startblk = startblk;
   }
-  
-
   // Search the bn's block
   for(int i = 0; i < bn; i++){
     //printf("search the block %d\n", i);
     //int temp = fatblocks[startblk];
-    int temp = fatbuf[FFBLOCK(startblk)][startblk % FPB];
-    if(temp == -1){
-      panic("bmap: meta block");
-      return 0;
-    }
-    else if(temp == 0){
-      //printf("end of file. allocate the new block\n");
-      int newblk = balloc(ip->dev, startblk, bp, fatbuf);
-      change = 1;
-      if(newblk == 0){
-        printf("bmap: out of disk space\n");
+    int temp = fatbuf[startblk];
+    if(temp == 0)
+    { acquiresleep(&fattable.lock);
+      startblk = balloc(ip->dev, startblk);
+      releasesleep(&fattable.lock);
+      if(startblk == 0)
         return 0;
-      }
-      startblk = newblk;
     }
-    else{
+    else
       startblk = temp;
-    }
-  }
-
-  for(i = 0; i < sb.nfat; i++){
-    if(change == 1)
-      log_write(bp[i]);
-    brelse(bp[i]);
   }
   addr = startblk;
   return addr;
-  //panic("bmap: out of range");
 }
 
 
@@ -511,31 +495,14 @@ bmap(struct inode *ip, uint bn)
 void
 itrunc(struct inode *ip)
 {
-  // for(i = 0; i < NDIRECT; i++){
-  //   if(ip->addrs[i]){
-  //     bfree(ip->dev, ip->addrs[i]);
-  //     ip->addrs[i] = 0;
-  //   }
-  // }
-
-  // if(ip->addrs[NDIRECT]){
-  //   bp = bread(ip->dev, ip->addrs[NDIRECT]);
-  //   a = (uint*)bp->data;
-  //   for(j = 0; j < NINDIRECT; j++){
-  //     if(a[j])
-  //       bfree(ip->dev, a[j]);
-  //   }
-  //   brelse(bp);
-  //   bfree(ip->dev, ip->addrs[NDIRECT]);
-  //   ip->addrs[NDIRECT] = 0;
-  // }
-  //printf("itrunc: startblk %d, ip->inum %d\n, sb.freehead %d\n", ip->startblk, ip->inum, sb.freehead);
   if(ip->startblk != 0){
+    acquiresleep(&fattable.lock);
     bfree(ip->dev, ip->startblk);
+    releasesleep(&fattable.lock);
     ip->startblk = 0;
   }
   ip->size = 0;
-  iupdate(ip);
+  //iupdate(ip);
 }
 
 // Copy stat information from inode.

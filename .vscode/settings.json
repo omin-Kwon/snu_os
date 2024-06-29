@@ -3,6 +3,16 @@
         "__config": "c",
         "iomanip": "c",
         "istream": "c",
-        "locale": "c"
+        "locale": "c",
+        "param.h": "c",
+        "defs.h": "c",
+        "stat.h": "c",
+        "types.h": "c",
+        "riscv.h": "c",
+        "spinlock.h": "c",
+        "proc.h": "c",
+        "sleeplock.h": "c",
+        "file.h": "c",
+        "fs.h": "c"
     }
 }

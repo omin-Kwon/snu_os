@@ -198,8 +198,8 @@ main(int argc, char *argv[])
   off = ((off/BSIZE) + 1) * BSIZE;
   din.size = xint(off);
   winode(rootino, &din);
-  //print_inodeblocks();
-  print_fatblock();
+  print_inodeblocks();
+  //print_fatblock();
   //read_dirblocks(44);
   //read_superblock();
   exit(0);
